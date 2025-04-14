@@ -147,7 +147,23 @@ class DataManager:
             response = requests.get(base_url, params=params)
             response.raise_for_status()
             data = response.json()
-            return data['values']
+            result = dict()
+            for indicator, entities in data['values'].items():
+                result[indicator] = dict()
+                for entity, entity_data in entities.items():
+                    result[indicator][entity] = dict()
+                    # 获取年份和对应的值
+                    years = list(entity_data.keys())
+                    values = [entity_data[year] for year in years]
+                    years = list(map(int, years))
+                    #异常处理：如果没有数据，则跳过
+                    if not years or not values:
+                        print(f"警告: {entity} 在指标 {indicator} 中没有数据")
+                        continue
+                    result[indicator][entity]['years'] = years
+                    result[indicator][entity]['values'] = values
+            
+            return result
         except requests.exceptions.RequestException as e:
             print(f"请求错误: {e}")
             return None
