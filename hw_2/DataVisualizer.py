@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from io import BytesIO
 class DataVisualizer:
     """
     可视化IMF数据的类
@@ -54,7 +55,7 @@ class DataVisualizer:
                     )
                 )
     
-    def plot_data(self, indicator, indicator_label, indicator_unit, entities, figsize=(10, 7)):
+    def plot_data(self, indicator, indicator_label, indicator_unit, entities,  figsize=(10, 7)):
         """
         数据可视化函数
         :param indicator: 指标ID (如: 'NGDP_RPCH')
@@ -62,6 +63,7 @@ class DataVisualizer:
         :param indicator_unit: 指标单位描述
         :param entities: 国家/地区代码列表 (如: ['USA', 'CHN'])
         :param figsize: 图表尺寸 (宽, 高)
+        :return: 二进制图像数据
         """
         if indicator not in self.data:
             raise ValueError(f"指标 {indicator} 不存在于数据中")
@@ -69,6 +71,8 @@ class DataVisualizer:
         # 获取所有年份范围（用于统一x轴）
         all_years = set()
         for entity in entities:
+            if entity not in indicator_data:
+                continue
             all_years.update(indicator_data[entity]['years'])
         min_year, max_year = min(all_years), max(all_years)
         
@@ -77,8 +81,18 @@ class DataVisualizer:
         
         # 绘制每个实体的数据
         for idx, entity in enumerate(entities):
-            years = indicator_data[entity]['years']
-            values = indicator_data[entity]['values']
+            try:
+                data = indicator_data[entity]
+            except KeyError:
+                print(f"警告: 实体 {entity} 在指标 {indicator} 中没有数据")
+                continue
+
+            try:
+                years = data['years']
+                values = data['values']
+            except KeyError as e:
+                print(f"警告: 实体 {entity} 的数据缺少关键字段: {e}")
+                continue
             
             # 绘制折线
             ax.plot(years,values, marker='o', markersize=8, linewidth=2.5,color=colors[idx], label=entity, alpha=0.9)
@@ -93,6 +107,10 @@ class DataVisualizer:
         ax.legend(loc='upper left', bbox_to_anchor=(1, 1), frameon=True, framealpha=0.8, title='国家/地区')
         self._smart_xticks(ax, range(min_year, max_year + 1))
         plt.tight_layout()
-        plt.show()
+        # 转换为二进制图像
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=120)
+        plt.close(fig)
+        return buf.getvalue()
         
 

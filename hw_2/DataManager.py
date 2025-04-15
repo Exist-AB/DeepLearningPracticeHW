@@ -4,14 +4,23 @@ import os
 class BasicInfoManager:
     def __init__(self):
         self.base_url = 'https://www.imf.org/external/datamapper/api/v1'
-        if not os.path.exists('available_indicators.json'):
+        cwd = os.getcwd()  # 获取当前工作路径
+        cwd = os.getcwd()  # 获取当前工作路径
+        json_dir = os.path.join(cwd, 'hw_2')
+        if not os.path.exists(json_dir):
+            os.makedirs(json_dir)
+        indicators_path = os.path.join(json_dir, 'available_indicators.json')
+        entities_path = os.path.join(json_dir, 'available_entities.json')
+        if not os.path.exists(indicators_path):
             self.available_indicators = self.get_available_indicators()
+            self.save_available_indicators(indicators_path)
         else:
-            self.available_indicators = self.read_available_indicators('available_indicators.json')
-        if not os.path.exists('available_entities.json'):
+            self.available_indicators = self.read_available_indicators(indicators_path)
+        if not os.path.exists(entities_path):
             self.available_entities = self.get_available_entities()
+            self.save_available_entities(entities_path)
         else:
-            self.available_entities = self.read_available_entities('available_entities.json')
+            self.available_entities = self.read_available_entities(entities_path)
         if self.available_indicators is None or self.available_entities is None:
             raise ValueError("无法获取可用指标或国家/地区信息")
             
@@ -35,10 +44,9 @@ class BasicInfoManager:
         将可用的指标字典保存到文件
         :param filename: 文件名
         """
-        indicators = self.get_available_indicators()
-        if indicators:
+        if self.available_indicators:
             with open(filename, 'w') as f:
-                json.dump(indicators, f)
+                json.dump(self.available_indicators, f)
             print(f"可用指标已保存到 {filename}")
         else:
             print("无法获取可用指标")
@@ -77,10 +85,9 @@ class BasicInfoManager:
         将可用的国家/地区字典保存到文件
         :param filename: 文件名
         """
-        entities = self.get_available_entities()
-        if entities:
+        if self.available_entities:
             with open(filename, 'w') as f:
-                json.dump(entities, f)
+                json.dump(self.available_entities, f)
             print(f"可用国家/地区已保存到 {filename}")
         else:
             print("无法获取可用国家/地区")
@@ -103,19 +110,18 @@ class DataManager:
     def __init__(self):
         self.base_url = 'https://www.imf.org/external/datamapper/api/v1'
     
-    def query_params_check(self, basic_info_manager, indicators, entities, years):
+    def query_params_check(self, basic_info_manager, indicator, entities, years):
         """
         检查查询参数的有效性
-        :param indicators: 指标ID列表 (如: ['NGDP_RPCH','LP'])
+        :param indicator: 指标ID (如: 'NGDP_RPCH')
         :param entities: 国家/地区代码列表 (如: ['USA', 'CHN'])
         :param years: 年份范围 (如: [2019, 2020])
         :return: 是否有效的布尔值
         """
-        if indicators is None :
+        if indicator is None :
             return False
-        for indicator in indicators:
-            if indicator not in basic_info_manager.available_indicators:
-                return False
+        if indicator not in basic_info_manager.available_indicators:
+            return False
         for entity in entities:
             if entity not in basic_info_manager.available_entities:
                 return False
@@ -123,26 +129,27 @@ class DataManager:
             return False
         return True
     
-    def query_data(self, indicators, entities, years):
+    def query_data(self, indicator, entities, years):
         """
-        从IMF API获取数据
-        :param indicators: 指标ID列表 (如: ['NGDP_RPCH','LP'])
+        从IMF API获取数据(仅限单个指标)
+        :param indicator: 指标ID如: 'NGDP_RPCH'
         :param entities: 国家/地区代码列表 (如: ['USA', 'CHN'])
         :param years: 年份范围 (如: [2019, 2020])
-        :return: 解析后的数据字典，三层嵌套结构，第一层为指标，第二层为国家/地区，第三层为年份和对应的值，年份和值都是列表
+        :return: 解析后的数据字典，三层嵌套结构，第一层为指标，第二层为国家/地区，第三层为年份和对应的值，年份和值都是列表。
         """
         base_url = self.base_url
 
         # 若提供了指标，则将其添加到URL中
-        if indicators:
-            base_url += '/' + '/'.join(indicators)
+        if indicator:
+            base_url += f"/{indicator}"
         # 若提供了国家/地区代码，则将其添加到URL中
         if entities:
             base_url += '/' + '/'.join(entities)
 
         # 若提供了年份范围，则将其添加为查询参数，使用逗号分隔
         params = {'periods': ','.join(map(str, years))} if years else None
-
+        
+        warnings = []
         try:
             response = requests.get(base_url, params=params)
             response.raise_for_status()
@@ -156,14 +163,17 @@ class DataManager:
                     years = list(entity_data.keys())
                     values = [entity_data[year] for year in years]
                     years = list(map(int, years))
-                    #异常处理：如果没有数据，则跳过
+                    #如果没有数据，则跳过
                     if not years or not values:
-                        print(f"警告: {entity} 在指标 {indicator} 中没有数据")
+                        msg=f"警告: {entity} 在指标 {indicator} 中没有数据"
+                        print(msg)
+                        warnings.append(msg)
                         continue
                     result[indicator][entity]['years'] = years
                     result[indicator][entity]['values'] = values
-            
+            if warnings:
+                result["_warnings"] = warnings
             return result
         except requests.exceptions.RequestException as e:
             print(f"请求错误: {e}")
-            return None
+            result = {"_warnings": [f"请求错误: {e}"]}
